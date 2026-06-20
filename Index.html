@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZIP → APK</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            padding: 20px;
+            margin: 0;
+        }
+        .container { max-width: 400px; margin: 0 auto; }
+        .card {
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 8px 0;
+            transition: opacity 0.2s;
+        }
+        .btn-primary {
+            background: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+        }
+        .btn-primary:active { opacity: 0.7; }
+        .btn-secondary {
+            background: var(--tg-theme-secondary-bg-color);
+            color: var(--tg-theme-text-color);
+            border: 1px solid var(--tg-theme-hint-color);
+        }
+        .status {
+            padding: 12px;
+            border-radius: 8px;
+            background: var(--tg-theme-secondary-bg-color);
+            margin: 8px 0;
+        }
+        .input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--tg-theme-hint-color);
+            border-radius: 8px;
+            background: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            font-size: 14px;
+            box-sizing: border-box;
+            margin: 8px 0;
+        }
+        .input:focus { outline: 2px solid var(--tg-theme-button-color); }
+        .file-list { list-style: none; padding: 0; }
+        .file-list li {
+            padding: 10px 12px;
+            background: var(--tg-theme-bg-color);
+            border-radius: 8px;
+            margin: 4px 0;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .badge {
+            background: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="card">
+        <h2>📦 Конвертер ZIP → APK</h2>
+        <p style="color: var(--tg-theme-hint-color); font-size: 14px;">
+            Отправь ZIP с Python-проектом (main.py) — получи APK для Android.
+        </p>
+    </div>
+
+    <div class="card">
+        <h3>📁 Ваши файлы</h3>
+        <ul class="file-list" id="fileList">
+            <li>Загрузите файлы через бота</li>
+        </ul>
+    </div>
+
+    <div class="card" id="convertCard">
+        <button class="btn btn-primary" onclick="convertAPK()">
+            🔄 Конвертировать ZIP → APK
+        </button>
+        <button class="btn btn-secondary" onclick="clearFiles()">
+            🗑️ Очистить файлы
+        </button>
+    </div>
+
+    <div id="statusContainer" class="hidden">
+        <div class="status" id="statusMessage">
+            ⏳ Идёт конвертация...
+        </div>
+        <div class="progress-bar" id="progressBar" style="height:4px;background:var(--tg-theme-hint-color);border-radius:2px;margin-top:8px;">
+            <div id="progressFill" style="width:0%;height:100%;background:var(--tg-theme-button-color);border-radius:2px;transition:width 1s;"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let tg = window.Telegram.WebApp;
+    tg.expand();
+
+    // Получаем список файлов из бота
+    async function loadFiles() {
+        try {
+            const response = await fetch('/api/files', {
+                headers: { 'X-Telegram-ID': tg.initDataUnsafe.user.id }
+            });
+            const data = await response.json();
+            const list = document.getElementById('fileList');
+            if (data.files && data.files.length > 0) {
+                list.innerHTML = data.files.map(f => `
+                    <li>
+                        <span>${f}</span>
+                        <span class="badge">${f.split('.').pop()}</span>
+                    </li>
+                `).join('');
+            }
+        } catch(e) {
+            console.error('Ошибка загрузки файлов', e);
+        }
+    }
+
+    async function convertAPK() {
+        const btn = document.querySelector('.btn-primary');
+        btn.disabled = true;
+        btn.textContent = '⏳ Конвертация...';
+
+        document.getElementById('statusContainer').classList.remove('hidden');
+        document.getElementById('statusMessage').textContent = '📦 Распаковка ZIP...';
+        document.getElementById('progressFill').style.width = '20%';
+
+        try {
+            const response = await fetch('/api/convert_apk', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Telegram-ID': tg.initDataUnsafe.user.id
+                },
+                body: JSON.stringify({ action: 'convert' })
+            });
+
+            document.getElementById('progressFill').style.width = '60%';
+            document.getElementById('statusMessage').textContent = '🔨 Сборка APK...';
+
+            const result = await response.json();
+
+            if (result.success) {
+                document.getElementById('progressFill').style.width = '100%';
+                document.getElementById('statusMessage').textContent = '✅ APK готов! Проверь Telegram';
+                tg.showAlert('APK создан! Файл отправлен в чат.');
+                tg.close();
+            } else {
+                document.getElementById('statusMessage').textContent = '❌ ' + result.error;
+                tg.showAlert('Ошибка: ' + result.error);
+            }
+        } catch(e) {
+            document.getElementById('statusMessage').textContent = '❌ Ошибка: ' + e.message;
+            tg.showAlert('Ошибка: ' + e.message);
+        }
+
+        btn.disabled = false;
+        btn.textContent = '🔄 Конвертировать ZIP → APK';
+    }
+
+    async function clearFiles() {
+        if (!confirm('Очистить все файлы?')) return;
+        try {
+            await fetch('/api/clear', {
+                method: 'POST',
+                headers: { 'X-Telegram-ID': tg.initDataUnsafe.user.id }
+            });
+            document.getElementById('fileList').innerHTML = '<li>Файлы очищены</li>';
+            tg.showAlert('✅ Файлы очищены!');
+        } catch(e) {
+            tg.showAlert('Ошибка: ' + e.message);
+        }
+    }
+
+    // Загружаем файлы при открытии
+    loadFiles();
+</script>
+</body>
+  </html>
